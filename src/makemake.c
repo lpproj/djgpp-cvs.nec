@@ -1,6 +1,10 @@
 /* Copyright (C) 2015 DJ Delorie, see COPYING.DJ for details */
 /* Copyright (C) 1998 DJ Delorie, see COPYING.DJ for details */
 /* Copyright (C) 1995 DJ Delorie, see COPYING.DJ for details */
+#ifdef __MINGW32__
+# include <windows.h>
+# include <direct.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +18,29 @@ char starting_dir[2000];
 char top_dir[2000];
 char path[2000];
 int do_oh_files = 0;
+
+#ifdef __MINGW32__
+static char *getcwd_without_driveletter(char *buf, size_t buflen)
+{
+    char *r_s = _getcwd(buf, buflen);
+    if (r_s) {
+        char *s = r_s;
+        size_t n = strlen(s);
+        if (n > 2 && r_s[1] == ':') {
+            memmove(s, s+2, n - 2 + 1);     /* strip drive prefix */
+        }
+        while(*s) {
+            if (*s == '\\') *s = '/';
+            s = (char *)CharNextA(s);
+        }
+    }
+    return r_s;
+}
+# define getcwd getcwd_without_driveletter
+# define FOPEN_MODE_WT  "wb"
+#else
+# define FOPEN_MODE_WT  "w"
+#endif
 
 void
 process_makefile(char *path_end)
@@ -195,11 +222,11 @@ main(int argc, char **argv)
     printf("makemake: scanning %s for makefiles\n", notepwd);
 
   if (!do_oh_files)
-    mf = fopen("makefile.sub", "w");
+    mf = fopen("makefile.sub", FOPEN_MODE_WT);
   else
   {
-    oi = fopen("makefile.oi", "w");
-    rf = fopen("makefile.rf2", "w");
+    oi = fopen("makefile.oi", FOPEN_MODE_WT);
+    rf = fopen("makefile.rf2", FOPEN_MODE_WT);
   }
 
   if (!do_oh_files)

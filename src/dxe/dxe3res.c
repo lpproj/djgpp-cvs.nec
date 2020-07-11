@@ -30,6 +30,11 @@
 #define ACCESS(f) (access(f, R_OK) == 0)
 #endif
 
+#ifdef __MINGW32__
+# define FOPEN_MODE_WT "wb"
+#else
+# define FOPEN_MODE_WT "w"
+#endif
 
 
 typedef struct {
@@ -469,7 +474,7 @@ static int resolve(int argc, char **argv)
 
   if (opt.outfile == NULL)
     f = stdout;
-  else if ((f = fopen(opt.outfile, "w")) == NULL)
+  else if ((f = fopen(opt.outfile, FOPEN_MODE_WT)) == NULL)
   {
     perror(opt.outfile);
     CLEANUP(4);

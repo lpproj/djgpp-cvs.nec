@@ -8,6 +8,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#ifdef __MINGW32__
+# define FOPEN_MODE_WT  "wb"
+#else
+# define FOPEN_MODE_WT  "w"
+#endif
+
 int
 main(int argc, char **argv)
 {
@@ -25,8 +31,8 @@ main(int argc, char **argv)
       break;
     remove(fn);
   }
-  mk = fopen("makefil2", "w");
-  oh = fopen("makefile.oh", "w");
+  mk = fopen("makefil2", FOPEN_MODE_WT);
+  oh = fopen("makefile.oh", FOPEN_MODE_WT);
   fprintf(mk, "TOP=..\n\n");
 
   stubs = fopen(argv[1], "r");
@@ -40,7 +46,7 @@ main(int argc, char **argv)
       continue;
 
     sprintf(fn, "stub%04d.S", i);
-    as = fopen(fn, "w");
+    as = fopen(fn, FOPEN_MODE_WT);
     /* Blank line at start of output file is added to work around
      * gcc-3.0 preprocessor bug. See:
      *

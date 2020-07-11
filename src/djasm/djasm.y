@@ -21,6 +21,11 @@
 #ifndef O_BINARY
 #define O_BINARY 0
 #endif
+#ifdef __MINGW32__
+# define FOPEN_MODE_WT "wb"
+#else
+# define FOPEN_MODE_WT "w"
+#endif
 #undef _POSIX_SOURCE
 #include "../../include/coff.h"
 
@@ -1520,7 +1525,7 @@ int main(int argc, char **argv)
     case OUT_h:
     case OUT_inc:
     case OUT_s:
-      outfile = fopen(outfilename, "w");
+      outfile = fopen(outfilename, FOPEN_MODE_WT);
       break;
   }
   if (outfile == 0)
@@ -1616,7 +1621,7 @@ int main(int argc, char **argv)
   
   if (argc > 3)
   {
-    FILE *mapfile = fopen(argv[3], "w");
+    FILE *mapfile = fopen(argv[3], FOPEN_MODE_WT);
     lineaddr_s *laddr;
     fprintf(mapfile, "%#x bytes generated, %#x bytes in file, %#x bytes total, %d symbols\n",
       generated_bytes, bsspc, pc, symcount);

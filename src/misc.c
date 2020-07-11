@@ -9,6 +9,14 @@
 /* Miscellaneous things that are hard to do the same
    between Unix and MS-DOS */
 
+#ifdef __MINGW32__
+# include <direct.h>
+# define FOPEN_MODE_WT "wb"
+# define mkdir(path,mode) _mkdir(path)
+#else
+# define FOPEN_MODE_WT "w"
+#endif
+
 int
 main(int argc, char **argv)
 {
@@ -26,7 +34,7 @@ main(int argc, char **argv)
       f = stdout;
     else
     {
-      f = fopen(argv[2], "w");
+      f = fopen(argv[2], FOPEN_MODE_WT);
       if (f == 0)
       {
 	perror(argv[2]);

@@ -24,6 +24,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef __MINGW32__
+# define FOPEN_MODE_NOTBIN  "b"
+#else
+# define FOPEN_MODE_NOTBIN
+#endif
 
 #if defined (__GNUC__) && (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 8))
 # define __gnuc_extension__  __extension__
@@ -1406,10 +1411,10 @@ static int make_implib(void)
      * resolution table resides in the very same source with the wrappers,
      * otherwise the linker might get smart... and get rid of it!
      */
-    omode = "a";
+    omode = "a" FOPEN_MODE_NOTBIN;
   }
   else
-    omode = "w";
+    omode = "w" FOPEN_MODE_NOTBIN;
 
   /* `omode' holds the fopen mode */
   if ((implib = fopen(TEMP_S_FILE, omode)) == NULL)

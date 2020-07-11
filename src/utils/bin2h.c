@@ -15,6 +15,12 @@
 #define O_BINARY 0
 #endif
 
+#ifdef __MINGW32__
+# define FOPEN_MODE_WT  "w"
+#else
+# define FOPEN_MODE_WT  "wb"
+#endif
+
 int
 main(int argc, char **argv)
 {
@@ -36,7 +42,7 @@ main(int argc, char **argv)
     exit(1);
   }
 
-  of = fopen(argv[3], "w");
+  of = fopen(argv[3], FOPEN_MODE_WT);
 
   if (of == NULL)
   {

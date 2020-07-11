@@ -17,6 +17,12 @@
 
 #include <string>
 
+#ifdef __MINGW32__
+# define FOPEN_MODE_WT "wb"
+#else
+# define FOPEN_MODE_WT "w"
+#endif
+
 static char *dj_strlwr(char *s)
 {
   char *p = s;
@@ -918,7 +924,7 @@ int main (int argc, char **argv)
 
   scan_directory(argv[1]);
 
-  co = fopen(argv[2], "w");
+  co = fopen(argv[2], FOPEN_MODE_WT);
 
   // Functional Categories
   fputs("@c -----------------------------------------------------------------------------\n"
