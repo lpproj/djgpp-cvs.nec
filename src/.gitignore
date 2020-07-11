@@ -1,0 +1,9 @@
+*.d
+*.oh
+*.oi
+*.rf
+makefile.sub
+makefile.rf*
+gcc.opt
+gpp.opt
+gcc-l.opt

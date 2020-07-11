@@ -1,0 +1,5 @@
+*.d
+*.oh
+init*.h
+fini*.h
+
