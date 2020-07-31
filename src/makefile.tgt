@@ -1,0 +1,11 @@
+#
+# define target platform(s)
+#
+# SUPPORT_IBMPC common PC: IBM PC compatibles (default)
+# SUPPORT_NEC98 NEC PC-9800 series (PC-9801, PC-9821, PC-H98) and EPSON's compatibles
+# SUPPORT_FMR   Fujitsu FM R series (including FM TOWNS) - not supported yet
+
+SUPPORT_IBMPC=yes
+SUPPORT_NEC98=yes
+#SUPPORT_FMR=yes
+

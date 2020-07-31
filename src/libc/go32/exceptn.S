@@ -304,6 +304,17 @@ exception_state:		.space	64
 	.global	___excep_ds_alias
 ___excep_ds_alias:		.word	0	/* private locked __djgpp_ds_alias */
 
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+	.balign 16,,7
+	.global	___djgpp_npx_hdlr_native_mode_swint
+___djgpp_npx_hdlr_native_mode_swint:
+	pushl	%eax
+	movl	$0x10,%eax
+	call	___djgpp_hw_exception
+	popl	%eax
+	iret
+#endif
+
 	.balign 16,,7
 	.global	___djgpp_npx_hdlr
 ___djgpp_npx_hdlr:

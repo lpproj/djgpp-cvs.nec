@@ -37,6 +37,13 @@
    the static storage.  */
 int __bss_count = 1;
 
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+# include <libc/_machine.h>
+int __crt0_mtype = 0;
+unsigned char __crt0_machine_type = 0;
+unsigned char __crt0_machine_subtype = 0;
+#endif
+
 extern char **_environ;
 
 int __crt0_argc;
@@ -87,10 +94,24 @@ setup_core_selector(void)
 static void
 setup_screens(void)
 {
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+  /* todo: FMR */
+  if (__crt0_machine_type == MACHINE_TYPE_NEC98) {
+    unsigned s = (unsigned)(_farpeekw(_dos_ds, 0x600 + 0x32)) * 16U;
+    if (s == 0) {
+      s = __crt0_machine_subtype == MACHINE_SUBTYPE_NEC98_HIRES ? 0xe0000 : 0xa0000;
+    }
+    ScreenPrimary = ScreenSecondary = s;
+  }
+  else if (__crt0_machine_type == MACHINE_TYPE_IBMPC && (__crt0_machine_subtype & 0xf0) == MACHINE_SUBTYPE_IBMPC_TOPVIEW) {
+    ScreenSecondary = ScreenPrimary;
+  }
+#else
   if(_farpeekw(_dos_ds, 0xffff3) == 0xfd80)	/* NEC PC98 ? */
   {
     ScreenPrimary = ScreenSecondary = 0xa0000;
   }
+#endif
   else if (_farpeekb(_dos_ds, 0x449) == 7)
   {
     ScreenPrimary = 0xb0000;
@@ -208,6 +229,61 @@ setup_os_version(void)
   _osminor = v & 0xff;
 }
 
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+static void
+setup_machine_type(void)
+{
+  __dpmi_regs regs;
+
+  /* todo: check FMR at first (for MACHINE_TYPE_FMR */
+  if (_farpeekw(_dos_ds, 0xffff3) == 0xfd80) {
+    __crt0_machine_type = MACHINE_TYPE_NEC98;
+    /* __crt0_machine_subtype = MACHINE_SUBTYPE_NEC98_NORMAL */
+  }
+  else {
+    regs.x.ax = 0x0f07;
+    __dpmi_int(0x10, &regs);
+    if (regs.h.ah == 0x0f) __crt0_machine_type = MACHINE_TYPE_NEC98;
+    else __crt0_machine_type = MACHINE_TYPE_IBMPC;
+  }
+
+  switch(__crt0_machine_type) {
+    case MACHINE_TYPE_IBMPC: {
+      regs.h.ah = 0xfe;
+      regs.x.di = 0;
+      regs.x.es = 0xb800;
+      __dpmi_int(0x10, &regs);
+      if (regs.x.di == 0 || regs.x.es == 0xb800) {
+        __crt0_machine_subtype = MACHINE_SUBTYPE_IBMPC;
+      }
+      else {
+        __crt0_machine_subtype = MACHINE_SUBTYPE_IBMPC_TOPVIEW;
+        ScreenPrimary = (unsigned)(regs.x.es) * 16U + regs.x.di;
+        regs.x.ax = 0x4900;
+        regs.x.bx = 0;
+        __dpmi_int(0x15, &regs);
+        if (regs.h.ah == 0 && regs.h.bl < 15) {
+          __crt0_machine_subtype += (regs.h.bl + 1);
+          __crt0_mtype = __crt0_mtype_DOSV;
+        }
+      }
+      break;
+    }
+    case MACHINE_TYPE_NEC98: {
+        if ((_farpeekb(_dos_ds, 0x501) & 0x08) == 0x08) {
+          __crt0_machine_subtype = MACHINE_SUBTYPE_NEC98_HIRES;
+          __crt0_mtype = __crt0_mtype_PC98H;
+        }
+        else {
+          __crt0_machine_subtype = MACHINE_SUBTYPE_NEC98_NORMAL;
+          __crt0_mtype = __crt0_mtype_PC98;
+        }
+      break;
+    }
+  }
+}
+#endif /* SUPPORT_NEC98 || SUPPORT_FMR */
+
 
 void
 __crt1_startup(void)
@@ -216,6 +292,9 @@ __crt1_startup(void)
   __crt0_argv = 0;
   setup_os_version();
   setup_core_selector();
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+  setup_machine_type();
+#endif
   setup_screens();
   setup_go32_info_block();
   __djgpp_exception_setup();

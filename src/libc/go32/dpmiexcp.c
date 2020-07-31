@@ -22,6 +22,9 @@
 #include <sys/nearptr.h>		/* For DS base/limit info */
 #include <libc/internal.h>
 #include <stubinfo.h>
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+# include <libc/_machine.h>
+#endif
 
 #define err(x) _write(STDERR_FILENO, x, sizeof(x)-1)
 
@@ -35,6 +38,9 @@ extern unsigned __djgpp_stack_top;
 /* These are all defined in exceptn.S and only used here */
 extern int __djgpp_exception_table;
 extern int __djgpp_npx_hdlr;
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+extern int __djgpp_npx_hdlr_native_mode_swint;
+#endif
 extern int __djgpp_kbd_hdlr;
 extern int __djgpp_kbd_hdlr_pc98;
 extern short __excep_ds_alias;
@@ -86,6 +92,15 @@ except_to_sig(int excep)
   case 7:
     return SIGNOFP;
   default:
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+    if (__crt0_machine_type == MACHINE_TYPE_NEC98) {
+      return SIGILL;
+    }
+    else if (__crt0_machine_type == MACHINE_TYPE_NEC98) {
+      return SIGILL;
+    }
+    /* fallthrough (for IBMPC) */
+#endif
     if(excep == 0x75)		/* HW int to fake exception values hardcoded in exceptn.S */
       return SIGFPE;
     else if(excep == 0x78)
@@ -108,7 +123,20 @@ show_call_frame(void)
 
   if (isatty(STDERR_FILENO))
   {
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+    max = 25;
+    switch (__crt0_machine_type) {
+      case MACHINE_TYPE_IBMPC:
+        max =_farpeekb(_dos_ds, 0x484) + 1;
+        if (max <= 1) max = 25; /* old CGA/MDA */
+        break;
+      case MACHINE_TYPE_NEC98:
+        max = _farpeekb(_dos_ds, 0x600 + 0x112) + 1;
+        break;
+    }
+#else
     max =_farpeekb(_dos_ds, 0x484) + 1;	/* number of screen lines */
+#endif
     if (max < 10 || max > 75)	/* sanity check */
       max = 10;			/* 10 worked for v2.0 and v2.01 */
     else
@@ -196,7 +224,11 @@ do_faulting_finish_message(int fake_exception)
   const char *prog_name;
   
   /* check video mode for original here and reset (not if PC98) */
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+  if(__crt0_machine_type == MACHINE_TYPE_IBMPC && ScreenPrimary != 0xa0000 && _farpeekb(_dos_ds, 0x449) != old_video_mode) {
+#else
   if(ScreenPrimary != 0xa0000 && _farpeekb(_dos_ds, 0x449) != old_video_mode) {
+#endif
     asm volatile ("pusha;movzbl _old_video_mode,%eax; int $0x10;popa;nop");
   }
   en = (signum >= EXCEPTION_COUNT) ? 0 : 
@@ -235,7 +267,11 @@ do_faulting_finish_message(int fake_exception)
   else
     itox(__djgpp_exception_state->__eip, 8);
 
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+  if (__crt0_machine_type == MACHINE_TYPE_IBMPC && signum == 0x79)
+#else
   if (signum == 0x79)
+#endif
   {
     err("\r\n");
     exit(-1); /* note: `exit', not `_exit' as for the rest of signals! */
@@ -250,7 +286,20 @@ do_faulting_finish_message(int fake_exception)
   }
   if (except_to_sig(signum) == SIGFPE)
   {
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+    unsigned sw, cw;
+
+    /* NEC98: avoid re-raising SIGFPE at _status87() */
+    asm volatile ("fnstsw %0; fnstcw %1" : "=m"(sw), "=m"(cw));
+    if (__crt0_machine_type != MACHINE_TYPE_IBMPC)
+    {
+      asm volatile ("fnclex");
+    }
+    err(", x87 status="); itox((sw & 0xffffU), 4);
+    err(" control="); itox((cw & 0xffffU), 4);
+#else
     err(", x87 status="); itox(_status87(), 4);
+#endif
   }
   err("\r\neax="); itox(__djgpp_exception_state->__eax, 8);
   err(" ebx="); itox(__djgpp_exception_state->__ebx, 8);
@@ -382,7 +431,13 @@ __djgpp_exception_processor(void)
   
   sig = except_to_sig(__djgpp_exception_state->__signum);
   raise(sig);
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+  if(__djgpp_exception_state->__signum >= EXCEPTION_COUNT /* Not exception so continue OK */
+     || (__crt0_machine_type != MACHINE_TYPE_IBMPC && __djgpp_exception_state->__signum == 16) /* NEC98 (and FMR?): Floating point exception (native mode) */
+    )
+#else
   if(__djgpp_exception_state->__signum >= EXCEPTION_COUNT) /* Not exception so continue OK */
+#endif
     longjmp(__djgpp_exception_state, __djgpp_exception_state->__eax);
   /* User handler did not exit or longjmp, we must exit */
   err("Cannot continue from exception, ");
@@ -403,6 +458,12 @@ static __dpmi_regs cbrk_regs;
 void
 __djgpp_exception_toggle(void)
 {
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+  /* NEC98: For Microsoft's DPMI server (DPMI.EXE in NEC DOS 5.0 or "MS-DOS Prompt" in Win3.x/9x), seems to be needed to hook 0x10 as software intrrupt */
+  const int npx_int = __crt0_machine_type == MACHINE_TYPE_IBMPC ? 0x75 : 0x10;
+#else
+  const int npx_int = 0x75;
+#endif
   __dpmi_paddr except;
   size_t i;
   
@@ -413,8 +474,8 @@ __djgpp_exception_toggle(void)
       __dpmi_set_processor_exception_handler_vector(i, &except_ori[i]);
     except_ori[i] = except;
   }
-  __dpmi_get_protected_mode_interrupt_vector(0x75, &except);
-  __dpmi_set_protected_mode_interrupt_vector(0x75, &npx_ori);
+  __dpmi_get_protected_mode_interrupt_vector(npx_int, &except);
+  __dpmi_set_protected_mode_interrupt_vector(npx_int, &npx_ori);
   npx_ori = except;
   __dpmi_get_protected_mode_interrupt_vector(9, &except);
   __dpmi_set_protected_mode_interrupt_vector(9, &kbd_ori);
@@ -432,7 +493,11 @@ __djgpp_exception_toggle(void)
   /* If the timer interrupt is hooked, toggle it as well.  This is so
      programs which use SIGALRM or itimer, and don't unhook the timer before
      they exit, won't leave the system with timer pointing into the void.  */
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+  if (__crt0_machine_type == MACHINE_TYPE_IBMPC && __djgpp_old_timer.selector != 0 && __djgpp_old_timer.offset32 != 0)
+#else
   if (__djgpp_old_timer.selector != 0 && __djgpp_old_timer.offset32 != 0)
+#endif
   {
     if (timer_ori.selector == __djgpp_old_timer.selector
 	&& timer_ori.offset32 == __djgpp_old_timer.offset32)
@@ -522,6 +587,22 @@ __djgpp_exception_setup(void)
   size_t i;
 
   __excep_ds_alias = __djgpp_ds_alias;
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+  if (__crt0_machine_type == MACHINE_TYPE_IBMPC)
+  { /* for IBMPC */
+    __djgpp_set_sigint_key(DEFAULT_SIGINT);
+    __djgpp_set_sigquit_key(DEFAULT_SIGQUIT);
+  }
+  else if (__crt0_machine_type == MACHINE_TYPE_NEC98)
+  { /* for PC98 */
+    __djgpp_set_sigint_key(DEFAULT_SIGINT_98);
+    __djgpp_set_sigquit_key(DEFAULT_SIGQUIT_98);
+  }
+  else if (__crt0_machine_type == MACHINE_TYPE_FMR)
+  {
+    /* todo: for FMR */
+  }
+#else
   if (ScreenPrimary != 0xa0000)
     {
       __djgpp_set_sigint_key(DEFAULT_SIGINT);
@@ -532,6 +613,7 @@ __djgpp_exception_setup(void)
       __djgpp_set_sigint_key(DEFAULT_SIGINT_98);
       __djgpp_set_sigquit_key(DEFAULT_SIGQUIT_98);
     }
+#endif
 
   for (i = 0; i < SIGMAX; i++)
     signal_list[i] = (SignalHandler)SIG_DFL;
@@ -556,6 +638,23 @@ __djgpp_exception_setup(void)
   }
   kbd_ori.selector = npx_ori.selector = except.selector;
   npx_ori.offset32 = (unsigned) &__djgpp_npx_hdlr;
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+  if (__crt0_machine_type == MACHINE_TYPE_IBMPC)
+    kbd_ori.offset32 = (unsigned) &__djgpp_kbd_hdlr;
+  else if (__crt0_machine_type == MACHINE_TYPE_NEC98)
+  {
+    npx_ori.offset32 = (unsigned) &__djgpp_npx_hdlr_native_mode_swint;
+    kbd_ori.offset32 = (unsigned) &__djgpp_kbd_hdlr_pc98;
+    cbrk_vect = 0x06;
+    except.offset32 = (unsigned) &__djgpp_iret;		/* TDPMI98 bug */
+    __dpmi_set_protected_mode_interrupt_vector(0x23, &except);
+  }
+  else if (__crt0_machine_type == MACHINE_TYPE_FMR)
+  {
+    /* todo: for FMR */
+    npx_ori.offset32 = (unsigned) &__djgpp_npx_hdlr_native_mode_swint;
+  }
+#else
   if(ScreenPrimary != 0xa0000)
     kbd_ori.offset32 = (unsigned) &__djgpp_kbd_hdlr;
   else
@@ -565,6 +664,7 @@ __djgpp_exception_setup(void)
     except.offset32 = (unsigned) &__djgpp_iret;		/* TDPMI98 bug */
     __dpmi_set_protected_mode_interrupt_vector(0x23, &except);
   }
+#endif
   except.offset32 = (unsigned) &__djgpp_i24;
   __dpmi_set_protected_mode_interrupt_vector(0x24, &except);
 
