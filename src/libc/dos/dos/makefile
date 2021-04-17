@@ -6,7 +6,7 @@ TOP=../..
 
 SRC += bdos.c
 SRC += bdosptr.S
-SRC += delay.c
+#SRC += delay.c
 SRC += fexistp.c
 SRC += getcbrk.c
 SRC += getdate.c

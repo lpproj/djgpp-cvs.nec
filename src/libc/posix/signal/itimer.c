@@ -14,6 +14,7 @@
        debugged programs.
      (Both of the above were true for the old version, too.)
 */
+/* TODO (lpproj): support NEC98 */
 
 #include <libc/stubs.h>
 #include <sys/time.h>

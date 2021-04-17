@@ -12,6 +12,11 @@
 
 #ifndef _POSIX_SOURCE
 
+#if defined SUPPORT_IBMPC || defined SUPPORT_NEC98 || defined SUPPORT_FMR
+# include <stdio.h>
+# include <stdlib.h>
+#endif
+
 #define __crt0_mtype_PCAT   0x00
 #define __crt0_mtype_DOSV   0x01
 #define __crt0_mtype_PC98   0x10
@@ -35,6 +40,16 @@ extern "C" {
 
 extern unsigned char __crt0_machine_type;
 extern unsigned char __crt0_machine_subtype;
+
+#if defined SUPPORT_IBMPC || defined SUPPORT_NEC98 || defined SUPPORT_FMR
+static inline __libc_unsupported_platform(const char *n) {
+  fprintf(stderr, "FATAL: unsupported platform in %s\n", n);
+  abort();
+}
+# define ABORT_UNSUPPORTED __libc_unsupported_platform(__func__)
+#else
+# define ABORT_UNSUPPORTED abort()
+#endif
 
 #ifdef __cplusplus
 }

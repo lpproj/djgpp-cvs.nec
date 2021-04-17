@@ -1,10 +1,13 @@
 /* Copyright (C) 2011 DJ Delorie, see COPYING.DJ for details */
 /* Copyright (C) 1996 DJ Delorie, see COPYING.DJ for details */
+/* Modified by takas 1997-2000 for libc(AT/98) */
+/* Modified by lpproj, 2021 */
 #include <libc/stubs.h>
 #include <fcntl.h>	/* for _USE_LFN */
 #include <io.h>		/* for the prototype of `_flush_disk_cache' */
 #include <dir.h>	/* for `getdisk' */
 #include <dpmi.h>	/* for `__dpmi_int' and friends */
+#include <libc/_machine.h>
 
 /* Try to cause the disk cache to write the cached data to disk(s).  */
 void
@@ -22,13 +25,23 @@ _flush_disk_cache(void)
     r.x.cx = 1;      /* flush buffers and cache, reset drive */
     r.x.dx = drv + 1;
     __dpmi_int (0x21, &r);
+#if defined SUPPORT_IBMPC || defined SUPPORT_NEC98 || defined SUPPORT_FMR
+    if (__crt0_machine_type == MACHINE_TYPE_IBMPC && ((r.x.flags & 1) || (r.x.ax == 0x7100)))
+#else
     if ((r.x.flags & 1) || (r.x.ax == 0x7100))
+#endif
     {
       /*  Never assume that the complete LFN API is implemented,
           so check that AX != 0x7100.  E.G.: MSDOS 6.22 and DOSLFN 0.40.
           If not supported fall back on SFN API.  */
       goto do_BIOS_DISK_RESET;
     }
+    return;
+  }
+  else
+  {
+    r.h.ah = 0x0d;
+    __dpmi_int(0x21, &r);
     return;
   }
 

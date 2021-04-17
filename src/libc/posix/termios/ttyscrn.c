@@ -9,6 +9,7 @@
 #include <dpmi.h>
 #include <libc/ttyprvt.h>
 #include <libc/farptrgs.h>
+/* TODO (lpproj): support NEC98 */
 
 struct direct_private_info
 {

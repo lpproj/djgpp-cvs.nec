@@ -1,0 +1,31 @@
+#include <bios.h>
+#include <dpmi.h>
+#include <libc/_machine.h>
+#include "_bios.h"
+
+int
+biosequip(void)
+{
+  int rval = 0;
+
+  switch(__crt0_machine_type)
+  {
+#if defined SUPPORT_IBMPC
+    case MACHINE_TYPE_IBMPC:
+      rval = biosequip_ibmpc();
+      break;
+#endif
+#if defined SUPPORT_NEC98
+    case MACHINE_TYPE_NEC98:
+      rval = biosequip_nec98();
+      break;
+#endif
+    default:
+#if 0
+      ABORT_UNSUPPORTED;
+#endif
+      break;
+  }
+
+  return rval;
+}
