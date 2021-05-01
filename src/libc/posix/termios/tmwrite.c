@@ -22,6 +22,10 @@
 #include <libc/farptrgs.h>
 #include <libc/getdinfo.h>
 
+#ifdef SUPPORT_IBMPC
+# include <libc/_machine.h>
+#endif
+
 #define NPAR 16
 
 struct tty_screen_interface *__tty_screen_intface;
@@ -92,6 +96,8 @@ void __libc_termios_init_write(void)
   _farsetsel(_dos_ds);
   __tty_screen.active_page = _farnspeekb(0x462);
   __tty_screen.max_row = (int)_farnspeekb(0x484);
+  if (__tty_screen.max_row <= 0 || __tty_screen.max_row == 255)
+    __tty_screen.max_row = 25; /* workaround for genuine CGA/MDA */
   __tty_screen.max_col = (int)_farnspeekw(0x44a) - 1;
 
   /* Does it normally blink when bg has its 3rd bit set?  */
@@ -117,7 +123,11 @@ void __libc_termios_init_write(void)
      in situations the direct video method isn't.  But when the direct video
      method is usable, it's faster.  */
   tty_screen = getenv("TTY_SCREEN_INTFACE");
+#ifdef SUPPORT_IBMPC
+  if ( tty_screen == NULL || *tty_screen == 'B' || *tty_screen == 'b' || ((__crt0_machine_subtype & 0xf0) == MACHINE_SUBTYPE_IBMPC_TOPVIEW && !(*tty_screen == 'D' || *tty_screen == 'd')) )
+#else
   if (tty_screen == NULL || (*tty_screen == 'B' || *tty_screen == 'b'))
+#endif
     __tty_screen_intface = &__tty_vbios_intface;
   else
     __tty_screen_intface = &__tty_direct_intface;
