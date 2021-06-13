@@ -1,6 +1,9 @@
 /* Copyright (C) 1994, 1995 Charles Sandmann (sandmann@clio.rice.edu)
    Exception handling and basis for signal support for DJGPP V2.0
    This software may be freely distributed, no warranty. */
+/* NEC98 and DOSV port: */
+/* base code by takas 1997-2000 for libc(AT/98) */
+/* modified by lpproj, 2021 */
 
 #include <libc/stubs.h>
 #include <stdio.h>
@@ -38,8 +41,13 @@ extern unsigned __djgpp_stack_top;
 /* These are all defined in exceptn.S and only used here */
 extern int __djgpp_exception_table;
 extern int __djgpp_npx_hdlr;
-#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR || defined SUPPORT_IBMPC
 extern int __djgpp_npx_hdlr_native_mode_swint;
+extern int __djgpp_timer_hwint;
+extern int __djgpp_timer_hwint_reloc;
+extern int __djgpp_timer_pic_imr;
+extern int __djgpp_timer_pic_ocw2;
+extern unsigned char __djgpp_timer_pic_mask;
 #endif
 extern int __djgpp_kbd_hdlr;
 extern int __djgpp_kbd_hdlr_pc98;
@@ -50,6 +58,63 @@ extern int __djgpp_hw_lock_start, __djgpp_hw_lock_end;
 extern __dpmi_paddr __djgpp_old_kbd;
 extern unsigned djgpp_exception_stack __asm__("exception_stack");
 extern __dpmi_paddr __djgpp_old_timer;
+
+#if defined SUPPORT_NEC98
+int __djgpp_nec98_timer_rm = 0;
+extern void __djgpp_nec98_pmtimer_hdlr(void);
+__dpmi_paddr __djgpp_nec98_pmtimer_ori;
+extern void __djgpp_nec98_rmtimer_hdlr(void);
+__dpmi_raddr __djgpp_nec98_rmtimer_ori;
+static __dpmi_raddr __djgpp_nec98_rmtimer_cb;
+static __dpmi_regs __djgpp_nec98_rmtimer_regs;
+
+static
+void nec98_hook_timer(void)
+{
+  if (__djgpp_nec98_timer_rm)
+  {
+    if (__djgpp_nec98_rmtimer_ori.segment == 0 && __djgpp_nec98_rmtimer_ori.offset16 == 0)
+    {
+      __dpmi_get_real_mode_interrupt_vector(8, &__djgpp_nec98_rmtimer_ori);
+      __dpmi_allocate_real_mode_callback(__djgpp_nec98_rmtimer_hdlr, &__djgpp_nec98_rmtimer_regs, &__djgpp_nec98_rmtimer_cb);
+      __dpmi_set_real_mode_interrupt_vector(8, &__djgpp_nec98_rmtimer_cb);
+    }
+  }
+  else
+  {
+    if (__djgpp_nec98_pmtimer_ori.selector == 0 && __djgpp_nec98_pmtimer_ori.offset32 == 0)
+    {
+      __dpmi_paddr nec98_int8;
+      nec98_int8.selector = _my_cs();
+      nec98_int8.offset32 = (unsigned)&__djgpp_nec98_pmtimer_hdlr;
+      __dpmi_get_protected_mode_interrupt_vector(8, &__djgpp_nec98_pmtimer_ori);
+      __dpmi_set_protected_mode_interrupt_vector(8, &nec98_int8);
+    }
+  }
+}
+
+static
+void nec98_unhook_timer(void)
+{
+  if (__djgpp_nec98_timer_rm)
+  {
+    if (__djgpp_nec98_rmtimer_ori.segment || __djgpp_nec98_rmtimer_ori.offset16)
+    {
+      __dpmi_set_real_mode_interrupt_vector(8, &__djgpp_nec98_rmtimer_ori);
+      __dpmi_free_real_mode_callback(&__djgpp_nec98_rmtimer_cb);
+      __djgpp_nec98_rmtimer_ori.offset16 = __djgpp_nec98_rmtimer_ori.segment = 0;
+    }
+  }
+  else
+  {
+    if (__djgpp_nec98_pmtimer_ori.selector)
+    {
+      __dpmi_set_protected_mode_interrupt_vector(8, &__djgpp_nec98_pmtimer_ori);
+      __djgpp_nec98_pmtimer_ori.offset32 = __djgpp_nec98_pmtimer_ori.selector = 0;
+    }
+  }
+}
+#endif /* SUPPORT_NEC98 */
 
 static void
 itox(int v, int len)
@@ -94,9 +159,12 @@ except_to_sig(int excep)
   default:
 #if defined SUPPORT_NEC98 || defined SUPPORT_FMR
     if (__crt0_machine_type == MACHINE_TYPE_NEC98) {
-      return SIGILL;
+      if(excep == __djgpp_timer_hwint_reloc)
+        return SIGTIMR;
+      else
+        return SIGILL;
     }
-    else if (__crt0_machine_type == MACHINE_TYPE_NEC98) {
+    else if (__crt0_machine_type == MACHINE_TYPE_FMR) {
       return SIGILL;
     }
     /* fallthrough (for IBMPC) */
@@ -127,8 +195,8 @@ show_call_frame(void)
     max = 25;
     switch (__crt0_machine_type) {
       case MACHINE_TYPE_IBMPC:
-        max =_farpeekb(_dos_ds, 0x484) + 1;
-        if (max <= 1) max = 25; /* old CGA/MDA */
+        max =_farpeekb(_dos_ds, 0x484);
+        max = (max == 0 || max == 255) ? 25 : max + 1;
         break;
       case MACHINE_TYPE_NEC98:
         max = _farpeekb(_dos_ds, 0x600 + 0x112) + 1;
@@ -493,8 +561,8 @@ __djgpp_exception_toggle(void)
   /* If the timer interrupt is hooked, toggle it as well.  This is so
      programs which use SIGALRM or itimer, and don't unhook the timer before
      they exit, won't leave the system with timer pointing into the void.  */
-#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
-  if (__crt0_machine_type == MACHINE_TYPE_IBMPC && __djgpp_old_timer.selector != 0 && __djgpp_old_timer.offset32 != 0)
+#if defined SUPPORT_NEC98 || defined SUPPORT_IBMPC
+  if ((__crt0_machine_type == MACHINE_TYPE_IBMPC /* || __crt0_machine_type == MACHINE_TYPE_NEC98 */) && __djgpp_old_timer.selector != 0 && __djgpp_old_timer.offset32 != 0)
 #else
   if (__djgpp_old_timer.selector != 0 && __djgpp_old_timer.offset32 != 0)
 #endif
@@ -668,9 +736,58 @@ __djgpp_exception_setup(void)
   except.offset32 = (unsigned) &__djgpp_i24;
   __dpmi_set_protected_mode_interrupt_vector(0x24, &except);
 
+#if defined SUPPORT_NEC98
+  if (__crt0_machine_type == MACHINE_TYPE_NEC98)
+  {
+    int dummy_capflags;
+    char hostinfo[128];
+    memset(hostinfo, 0, sizeof(hostinfo));
+    __dpmi_get_capabilities(&dummy_capflags, hostinfo);
+    __djgpp_nec98_timer_rm = *(unsigned *)(hostinfo + 2) == 0x204f2d49U; /* check I-O DATA DPMI */
+    nec98_hook_timer();
+  }
+#endif
+
   __dpmi_get_protected_mode_interrupt_vector(9, &__djgpp_old_kbd);
   __dpmi_get_protected_mode_interrupt_vector(8, &timer_ori);
   __djgpp_exception_toggle();	/* Set new values & save old values */
+#if defined SUPPORT_NEC98
+  if (__crt0_machine_type == MACHINE_TYPE_NEC98)
+  {
+    /* start 10ms interval timer */
+    if (__djgpp_nec98_info.Ir0Masked)
+    {
+# if defined NEC98_MODIFY_PIT
+      /* (seems to be needed for some version of T98Next */
+      unsigned cnt10ms = (__djgpp_nec98_info.s0501 & 0x80) ? 19968 : 24576;
+      unsigned char imr;
+      disable();
+      outportb(0x77, 0x36);
+      imr = inportb(0x02);
+      outportb(0x71, cnt10ms & 0xff);
+      __djgpp_nec98_iowait();
+      outportb(0x71, cnt10ms >> 8);
+      __djgpp_nec98_iowait();
+      outportb(0x02, imr & 0xfe);
+      enable();
+# else
+      __dpmi_regs r;
+      unsigned char imr;
+      r.x.ax = 0x3507;
+      __dpmi_int(0x21, &r); /* es:bx = vect07 */
+      /* set PIT (and unmask IR0) via timer BIOS */
+      /* do not modify PIT registers directly (workaround for anex86) */
+      r.h.ah = 0x02;
+      r.x.cx = 0xffff;
+      __dpmi_int(0x1c, &r);
+      /* unmask IR0 explicitly (needed for Win3.x DOS prompt) */
+      imr = inportb(0x02);
+      __djgpp_nec98_iowait();
+      outportb(0x02, imr & 0xfe);
+# endif /* NEC98_MODIFY_PIT */
+    }
+  }
+#endif
 
   /* get original video mode and save */
   old_video_mode = _farpeekb(_dos_ds, 0x449);
@@ -758,6 +875,21 @@ _exit(int status)
      coprocessor is actually present.  */
   if (_8087)
     _clear87();
+#if defined SUPPORT_NEC98
+  if (__crt0_machine_type == MACHINE_TYPE_NEC98)
+  {
+    _farpokew(_dos_ds, 0x58a, __djgpp_nec98_info.s058a);
+    if (__djgpp_nec98_info.Ir0Masked)
+    {
+      unsigned char imr;
+      disable();
+      imr = inportb(0x02);
+      __djgpp_nec98_iowait();
+      outportb(0x02, imr | 1); /* mask IR0 */
+      enable();
+    }
+  }
+#endif
   /* We need to restore hardware interrupt handlers even if somebody calls
      `_exit' directly, or else we crash the machine in nested programs.
      We only toggle the handlers if the original keyboard handler is intact
@@ -765,6 +897,10 @@ _exit(int status)
   if (__djgpp_old_kbd.offset32 == kbd_ori.offset32
       && __djgpp_old_kbd.selector == kbd_ori.selector)
     __djgpp_exception_toggle ();
+#if defined SUPPORT_NEC98
+  if (__crt0_machine_type == MACHINE_TYPE_NEC98)
+    nec98_unhook_timer();
+#endif
   __exit (status);
 }
 

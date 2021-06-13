@@ -22,6 +22,7 @@
 #include <libc/_machine.h>
 #include "../common/_timer.h"
 
+#if 0
 static int uclock_bss = -1;
 
 uclock_t uclock_nec98( void )
@@ -41,6 +42,9 @@ uclock_t uclock_nec98( void )
     base_sec = 0;
     base_tic = 0;
   }
+
+  if (__djgpp_nec98_info.has32ndSecTimer)
+    return uclock_nec98_32ndsectimer();
 
   rv_sec = time(NULL);
   ticH   = inportw(0x5C);
@@ -65,3 +69,44 @@ uclock_t uclock_nec98( void )
   } else
     return (uclock_t)(diff_sec*UCLOCKS_PER_SEC);
 }
+#endif
+
+extern unsigned long long __djgpp_timer_tick;
+uclock_t
+uclock_nec98_pit10ms(void)
+{
+  return (uclock_t)(__djgpp_timer_tick * UCLOCKS_PER_SEC) / 100U;
+}
+
+extern unsigned long long __djgpp_nec98_get_artic64(void);
+uclock_t uclock_nec98_artic( void )
+{
+  return (uclock_t)(__djgpp_nec98_get_artic64() * UCLOCKS_PER_SEC) / 307200U;
+}
+
+#if 0
+uclock_t
+uclock_nec98_hitimer(void)
+{
+  const uclock_t SEC32ND_PER_DAY = 24 * 60 * 60 * 32;
+  static int uclock_hitimer_bss = -1;
+  static unsigned day_prev, day_count;
+  unsigned s0, s, d;
+  uclock_t sec32nd;
+
+  s0 = _farpeekl(_dos_ds, 0x04f1); /* 0000:04F1 ... 04F3h */
+  s = s0 & 0x3fffff;
+  d = (s0 >> 22) & 3;
+  if (uclock_hitimer_bss != __bss_count) {
+    uclock_hitimer_bss = __bss_count;
+    day_prev = d;
+    day_count = 0;
+  }
+  if (day_prev != d) {
+    day_count += (day_prev < d) ? (d - day_prev) : ((day_prev + 4) - d);
+    day_prev = d;
+  }
+  sec32nd = SEC32ND_PER_DAY * day_count + s;
+  return (sec32nd * UCLOCKS_PER_SEC) / 32U;
+}
+#endif

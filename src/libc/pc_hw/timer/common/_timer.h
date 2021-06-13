@@ -9,5 +9,9 @@ clock_t clock_nec98(void);
 uclock_t uclock_ibmpc(void);
 uclock_t uclock_nec98(void);
 
+uclock_t uclock_nec98_pit10ms(void);
+uclock_t uclock_nec98_artic(void);
+uclock_t uclock_nec98_hitimer(void);
+
 
 #endif /* !__dj_include_machie_specific_timer_h_ */

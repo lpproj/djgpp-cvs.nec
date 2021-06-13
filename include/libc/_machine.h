@@ -51,6 +51,28 @@ static inline __libc_unsupported_platform(const char *n) {
 # define ABORT_UNSUPPORTED abort()
 #endif
 
+# ifdef SUPPORT_NEC98
+#  ifndef __djgpp_nec98_SYSTEMINFO_CONST
+#   define __djgpp_nec98_SYSTEMINFO_CONST const
+#  endif
+typedef struct {
+  __djgpp_nec98_SYSTEMINFO_CONST unsigned char s0458;
+  __djgpp_nec98_SYSTEMINFO_CONST unsigned char s045b;
+  __djgpp_nec98_SYSTEMINFO_CONST unsigned char s0500;
+  __djgpp_nec98_SYSTEMINFO_CONST unsigned char s0501;
+  __djgpp_nec98_SYSTEMINFO_CONST unsigned char s054d;
+  __djgpp_nec98_SYSTEMINFO_CONST unsigned char Ir0Masked;
+  __djgpp_nec98_SYSTEMINFO_CONST unsigned short s058a;
+  __djgpp_nec98_SYSTEMINFO_CONST volatile unsigned char hasWait5f;
+  __djgpp_nec98_SYSTEMINFO_CONST unsigned char hasArtic;
+  __djgpp_nec98_SYSTEMINFO_CONST unsigned char has32ndSecTimer;
+} __attribute__ ((packed)) __djgpp_nec98_SYSMEMINFO;
+
+extern __djgpp_nec98_SYSMEMINFO __djgpp_nec98_info;
+
+static inline void __djgpp_nec98_iowait(void) { if (__djgpp_nec98_info.hasWait5f) outportb(0x5f, 0); }
+# endif
+
 #ifdef __cplusplus
 }
 #endif

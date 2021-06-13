@@ -1,6 +1,9 @@
 /* Copyright (C) 1994, 1995 Charles Sandmann (sandmann@clio.rice.edu)
  * This file maybe freely distributed and modified as long as copyright remains.
  */
+/*
+  NEC98 port (npx, timer): 2021 lpproj
+*/
 
 #if    (GAS_MAJOR == 2) \
     && ((GAS_MINOR < 9) || ((GAS_MINOR == 9) && (GAS_MINORMINOR < 5)))
@@ -305,6 +308,39 @@ exception_state:		.space	64
 ___excep_ds_alias:		.word	0	/* private locked __djgpp_ds_alias */
 
 #if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+	.balign 4
+# if defined SUPPORT_NEC98
+	.global	___djgpp_nec98_timer_ori
+___djgpp_nec98_timer_ori:	.long	0, 0
+	.global	___djgpp_nec98_artic_org24
+	.global	___djgpp_nec98_artic_prev24
+	.global	___djgpp_nec98_artic_offset
+___djgpp_nec98_artic_org24:	.long	0
+___djgpp_nec98_artic_prev24:	.long	0
+___djgpp_nec98_artic_offset:	.long	0, 0
+#  define NEC98_ARTIC_UPDATE_CYCLE  100
+___djgpp_nec98_artic_update_countdown:	.long	NEC98_ARTIC_UPDATE_CYCLE
+# endif
+	.global	___djgpp_nec98_itimer_enabled
+___djgpp_nec98_itimer_enabled:	.long	0
+	.global	___djgpp_nec98_itimer_interval_count
+___djgpp_nec98_itimer_interval_count:	.long	1
+	.global	___djgpp_timer_tick
+___djgpp_timer_tick:		.long	0
+___djgpp_timer_tick_h:		.long	0
+	.global	___djgpp_timer_hwint
+___djgpp_timer_hwint:		.long	0x08	/* IBMPC & NEC98:0x08 */
+	.global	___djgpp_timer_hwint_reloc
+___djgpp_timer_hwint_reloc:	.long	0x78	/* IBMPC:0x78 */
+	.global	___djgpp_timer_pic_imr
+	.global	___djgpp_timer_pic_ocw1
+___djgpp_timer_pic_imr:
+___djgpp_timer_pic_ocw1:	.long	0x21	/* IMR NEC98:0x02 */
+	.global	___djgpp_timer_pic_ocw2
+___djgpp_timer_pic_ocw2:	.long	0x20	/* EOI NEC98:0x00 */
+	.global	___djgpp_timer_pic_mask
+___djgpp_timer_pic_mask:	.byte	0x01
+
 	.balign 16,,7
 	.global	___djgpp_npx_hdlr_native_mode_swint
 ___djgpp_npx_hdlr_native_mode_swint:
@@ -404,6 +440,133 @@ ___djgpp_kbd_hdlr_pc98:
 984:	inb	$0x41,%al			/* Read the scan code */
 	jmp	99b
 
+
+#if defined SUPPORT_NEC98
+
+	.balign 16,,7
+nec98_timer_hdlr_body:
+	pushl	%es
+	movw	___djgpp_dos_sel, %es
+	.byte	0x26				/* ES: */
+	movw	$-1, 0x58a
+	popl	%es
+	pushl	%eax
+	decl	___djgpp_nec98_artic_update_countdown
+	jnz	98010f
+	call	__djgpp_nec98_update_artic
+	movl	$NEC98_ARTIC_UPDATE_CYCLE, ___djgpp_nec98_artic_update_countdown
+98010:
+	xorl	%eax, %eax
+	addl	$1, ___djgpp_timer_tick
+	adcl	%eax, ___djgpp_timer_tick_h
+	cmpl	___djgpp_nec98_itimer_enabled, %eax	/* 0? */
+	je	980100f
+# if 1
+	cmpl	___djgpp_nec98_itimer_interval_count, %eax	/* 0? */
+	je	980100f
+	decl	___djgpp_nec98_itimer_interval_count
+	jnz	980100f
+	movl	___djgpp_nec98_itimer_interval, %eax
+	movl	%eax, ___djgpp_nec98_itimer_interval_count
+# endif
+	movl	___djgpp_timer_hwint_reloc, %eax
+	call	___djgpp_hw_exception
+980100:
+	popl	%eax
+	ret
+
+	.balign 16,,7
+	.global	___djgpp_nec98_rmtimer_hdlr
+___djgpp_nec98_rmtimer_hdlr:
+	movw	%cs:___excep_ds_alias, %ds
+	movl	___djgpp_nec98_rmtimer_ori, %eax	/* chain to rmtimer_ori */
+	movl	%eax, %es: 0x2a(%edi)
+	call	nec98_timer_hdlr_body
+	iret
+
+	.balign 16,,7
+	.global	___djgpp_nec98_pmtimer_hdlr
+___djgpp_nec98_pmtimer_hdlr:
+	pushal
+	pushl	%ds
+	movw	%cs:___excep_ds_alias, %ds
+	call	nec98_timer_hdlr_body
+	popl	%ds
+	popal
+	LJMP(%cs:___djgpp_nec98_pmtimer_ori)
+
+	.global	___djgpp_nec98_get_artic24
+___djgpp_nec98_get_artic24:
+	xorl	%eax, %eax
+	pushl	%ebx
+	pushl	%edx
+	xorl	%edx, %edx
+	inw	$0x5c, %ax
+	movl	%eax, %ebx
+	inw	$0x5e, %ax
+	movb	%ah, %dh
+	inw	$0x5c, %ax
+	cmpl	%eax, %ebx
+	jb	982124f
+	movl	%eax, %ebx
+	inw	$0x5e, %ax
+	movb	%ah, %dh
+982124:
+	movl	%edx, %eax
+	shll	$8, %eax
+	orl	%ebx, %eax
+	popl	%edx
+	popl	%ebx
+	ret
+
+__djgpp_nec98_update_artic:
+	testb	$-1, ___djgpp_nec98_info+9	/* __djgpp_nec98_info.hasArtic */
+	jz	98213299f
+	call	___djgpp_nec98_get_artic24
+	cmpl	___djgpp_nec98_artic_prev24, %eax
+	jae	982132f
+	addl	$0x01000000, ___djgpp_nec98_artic_offset
+	adcl	$0, ___djgpp_nec98_artic_offset + 4
+982132:
+	movl	%eax, ___djgpp_nec98_artic_prev24
+98213299:
+	ret
+
+	.balign 16,,7
+	.global	___djgpp_nec98_get_artic64
+___djgpp_nec98_get_artic64:
+	pushfl
+	cli
+	call	__djgpp_nec98_update_artic
+	movl	___djgpp_nec98_artic_offset + 4, %edx
+	orl	___djgpp_nec98_artic_offset, %eax
+	subl	___djgpp_nec98_artic_org24, %eax
+	sbbl	$0, %edx
+	testl	$0x200, (%esp)
+	jnz	98210200f
+	popfl
+	ret
+98210200:
+	popfl
+	sti
+	ret
+
+	.global	___djgpp_nec98_test_artic
+___djgpp_nec98_test_artic:
+	cli
+	pushl	%edx
+	inw	$0x5c, %ax
+	movl	%eax, %edx
+	outb	%al, $0x5f
+	outb	%al, $0x5f
+	outb	%al, $0x5f
+	inw	$0x5c, %ax
+	subl	%edx, %eax	/* test ARTIC counted */
+	popl	%edx
+	sti
+	ret
+#endif
+
 	.balign 16,,7
 	.global	___djgpp_timer_hdlr
 ___djgpp_timer_hdlr:
@@ -417,7 +580,12 @@ ___djgpp_timer_hdlr:
 	jmp	3f
 4:
 	pushl	%eax
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+   	.byte	0x2e				/* CS: */
+	movl	___djgpp_timer_hwint_reloc, %eax
+#else
 	movb	$0x78,%al
+#endif
 	call	___djgpp_hw_exception
 	popl	%eax
 3:
@@ -427,8 +595,17 @@ ___djgpp_timer_hdlr:
 	LJMP(%cs:___djgpp_old_timer)
 2:
 	pushl	%eax
+#if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+	pushl	%edx
+   	.byte	0x2e				/* CS: */
+	movl	___djgpp_timer_pic_ocw2, %edx
+	movb	$0x20, %al			/* EOI the interrupt */
+	outb	%al, %dx
+	popl	%edx
+#else
 	movb	$0x20,%al			/* EOI the interrupt */
 	outb	%al,$0x020
+#endif
 	popl	%eax
 	iret
 

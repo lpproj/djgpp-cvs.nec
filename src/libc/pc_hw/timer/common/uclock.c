@@ -28,7 +28,13 @@ static uclock_t uclock_setup(void)
 #endif
 #ifdef SUPPORT_NEC98
     case MACHINE_TYPE_NEC98:
-      __libc_timer_pf_uclock = uclock_nec98;
+      __libc_timer_pf_uclock = uclock_nec98_pit10ms;
+      if (__djgpp_nec98_info.hasArtic)
+        __libc_timer_pf_uclock = uclock_nec98_artic;
+# if 0
+      else if (__djgpp_nec98_info.has32ndSecTimer)
+        __libc_timer_pf_uclock = uclock_nec98_hitimer;
+# endif
       break;
 #endif
     default:

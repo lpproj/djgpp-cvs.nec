@@ -13,10 +13,30 @@
 unsigned _bios_timeofday_nec98(unsigned _cmd, unsigned long *_timeval);
 
 unsigned long
-rawclock_nec98(void)
+rawclock_nec98_fallback(void)
 {
   unsigned long ticks = 0;
 
   _bios_timeofday_nec98(_TIME_GETCLOCK, &ticks);
   return ticks;
 }
+
+static inline unsigned long _nec98_hitimer_raw(void)
+{
+  return _farpeekl(_dos_ds, 0x04f1) & 0x3fffff;
+}
+
+unsigned long
+rawclock_nec98_hitimer_raw(void)
+{
+  return _nec98_hitimer_raw();
+}
+
+unsigned long
+rawclock_nec98_hitimer(void)
+{
+  unsigned long s32nd = _nec98_hitimer_raw();
+  /* s55ms = (s32nd * 100 / 32) * 91 / 500; */
+  return (s32nd * 91) / (5 * 32);
+}
+

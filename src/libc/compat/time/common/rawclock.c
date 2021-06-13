@@ -16,7 +16,7 @@ static unsigned long rawclock_setup(void)
 #endif
 #ifdef SUPPORT_NEC98
     case MACHINE_TYPE_NEC98:
-      __libc_compat_pf_rawclock = rawclock_nec98;
+      __libc_compat_pf_rawclock = __djgpp_nec98_info.has32ndSecTimer ? rawclock_nec98_hitimer : rawclock_nec98_fallback;
       break;
 #endif
     default:

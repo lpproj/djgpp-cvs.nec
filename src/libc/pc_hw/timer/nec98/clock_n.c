@@ -12,6 +12,13 @@
 #include <libc/_machine.h>
 #include "../common/_timer.h"
 
+#if 1
+extern unsigned long long __djgpp_timer_tick;
+clock_t clock_nec98( void )
+{
+  return (clock_t)(__djgpp_timer_tick * CLOCKS_PER_SEC) / 100U;
+}
+#else
 static int clock_bss = -1;
 
 clock_t clock_nec98( void )
@@ -52,4 +59,5 @@ clock_t clock_nec98( void )
   } else
     return (clock_t)(diff_sec*CLOCKS_PER_SEC);
 }
+#endif
 

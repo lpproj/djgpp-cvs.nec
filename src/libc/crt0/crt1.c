@@ -7,6 +7,9 @@
 /* Copyright (C) 1997 DJ Delorie, see COPYING.DJ for details */
 /* Copyright (C) 1996 DJ Delorie, see COPYING.DJ for details */
 /* Copyright (C) 1995 DJ Delorie, see COPYING.DJ for details */
+/* NEC98 and DOSV port: */
+/* base code by takas 1997-2000 for libc(AT/98) */
+/* modified by lpproj, 2021 */
 #include <libc/stubs.h>
 #include <crt0.h>
 #include <string.h>
@@ -38,10 +41,23 @@
 int __bss_count = 1;
 
 #if defined SUPPORT_NEC98 || defined SUPPORT_FMR
+# define __djgpp_nec98_SYSTEMINFO_CONST
 # include <libc/_machine.h>
+extern int __djgpp_timer_hwint;
+extern int __djgpp_timer_hwint_reloc;
+extern int __djgpp_timer_pic_imr;
+extern int __djgpp_timer_pic_ocw2;
+extern unsigned char __djgpp_timer_pic_mask;
+
 int __crt0_mtype = 0;
 unsigned char __crt0_machine_type = 0;
 unsigned char __crt0_machine_subtype = 0;
+# ifdef SUPPORT_NEC98
+__djgpp_nec98_SYSMEMINFO __djgpp_nec98_info;
+int __djgpp_nec98_test_artic(void);
+unsigned __djgpp_nec98_artic_org24, __djgpp_nec98_artic_prev24;
+unsigned long long __djgpp_nec98_get_artic64(void);
+# endif
 #endif
 
 extern char **_environ;
@@ -249,6 +265,8 @@ setup_machine_type(void)
 
   switch(__crt0_machine_type) {
     case MACHINE_TYPE_IBMPC: {
+      __djgpp_timer_pic_imr = 0x21;
+      __djgpp_timer_pic_ocw2 = 0x20;
       regs.h.ah = 0xfe;
       regs.x.di = 0;
       regs.x.es = 0xb800;
@@ -269,17 +287,44 @@ setup_machine_type(void)
       }
       break;
     }
+# if defined SUPPORT_NEC98
     case MACHINE_TYPE_NEC98: {
-        if ((_farpeekb(_dos_ds, 0x501) & 0x08) == 0x08) {
-          __crt0_machine_subtype = MACHINE_SUBTYPE_NEC98_HIRES;
-          __crt0_mtype = __crt0_mtype_PC98H;
-        }
-        else {
-          __crt0_machine_subtype = MACHINE_SUBTYPE_NEC98_NORMAL;
-          __crt0_mtype = __crt0_mtype_PC98;
-        }
+      __djgpp_timer_pic_imr = 0x02;
+      __djgpp_timer_pic_ocw2 = 0x00;
+      __djgpp_nec98_info.s0458 = _farpeekb(_dos_ds, 0x458);
+      __djgpp_nec98_info.s045b = _farpeekb(_dos_ds, 0x45b);
+      __djgpp_nec98_info.s0500 = _farpeekb(_dos_ds, 0x500);
+      __djgpp_nec98_info.s0501 = _farpeekb(_dos_ds, 0x501);
+      __djgpp_nec98_info.s054d = _farpeekb(_dos_ds, 0x54d);
+      __djgpp_nec98_info.s058a = _farpeekw(_dos_ds, 0x58a);
+      __djgpp_nec98_info.Ir0Masked = inportb(0x02) & 1;
+      if (__djgpp_nec98_info.s0458 & 0x80) {
+        __djgpp_nec98_info.hasWait5f = 1;
+        __djgpp_nec98_info.hasArtic = 1;
+      }
+      else {
+        __djgpp_nec98_info.hasWait5f = (__djgpp_nec98_info.s045b & 0x80) != 0;
+        __djgpp_nec98_info.hasArtic = (__djgpp_nec98_info.s045b & 0x04) != 0;
+      }
+      if ((__djgpp_nec98_info.s0501 & 0x08) == 0x08) {
+        __crt0_machine_subtype = MACHINE_SUBTYPE_NEC98_HIRES;
+        __crt0_mtype = __crt0_mtype_PC98H;
+      }
+      else {
+        __crt0_machine_subtype = MACHINE_SUBTYPE_NEC98_NORMAL;
+        __crt0_mtype = __crt0_mtype_PC98;
+      }
+      if (!__djgpp_nec98_info.hasArtic) {
+        /* workaround for some emulators (anex86/t98next) */
+        __djgpp_nec98_info.hasArtic = (__djgpp_nec98_test_artic() != 0);
+      }
+      regs.d.eax = 0x80ff;
+      regs.d.ecx = 0xffff;
+      __dpmi_int(0x1c, &regs);
+      __djgpp_nec98_info.has32ndSecTimer = (regs.h.al <= 3 && regs.x.cx < 0xffff);
       break;
     }
+# endif /* SUPPORT_NEC98 */
   }
 }
 #endif /* SUPPORT_NEC98 || SUPPORT_FMR */
